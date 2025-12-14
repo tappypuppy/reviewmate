@@ -1,74 +1,93 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { register } from "@/actions/auth";
 
 type Mode = "login" | "signup";
 
+type FormState = {
+  error: string;
+  message: string;
+};
+
+const initialState: FormState = {
+  error: "",
+  message: "",
+};
+
 export default function LoginForm() {
   const router = useRouter();
-
   const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setMessage("");
-    setIsLoading(true);
+  const loginAction = async (
+    _prevState: FormState,
+    formData: FormData
+  ): Promise<FormState> => {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
-    try {
-      if (mode === "signup") {
-        const res = await fetch("/api/auth/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
 
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error || "登録に失敗しました");
-          return;
-        }
-
-        setMessage("アカウントを作成しました。ログインしてください。");
-        setMode("login");
-      } else {
-        const result = await signIn("credentials", {
-          email,
-          password,
-          redirect: false,
-        });
-
-        if (result?.error) {
-          setError("メールアドレスまたはパスワードが正しくありません");
-          return;
-        }
-
-        router.push("/dashboard");
-        router.refresh();
-      }
-    } finally {
-      setIsLoading(false);
+    if (result?.error) {
+      return {
+        error: "メールアドレスまたはパスワードが正しくありません",
+        message: "",
+      };
     }
+
+    router.push("/dashboard");
+    router.refresh();
+    return { error: "", message: "" };
   };
 
+  const signupAction = async (
+    _prevState: FormState,
+    formData: FormData
+  ): Promise<FormState> => {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    const result = await register({ email, password });
+
+    if (!result.success) {
+      return { error: result.error, message: "" };
+    }
+
+    setMode("login");
+    return {
+      error: "",
+      message: "アカウントを作成しました。ログインしてください。",
+    };
+  };
+
+  const [loginState, loginFormAction, isLoginPending] = useActionState(
+    loginAction,
+    initialState
+  );
+  const [signupState, signupFormAction, isSignupPending] = useActionState(
+    signupAction,
+    initialState
+  );
+
+  const state = mode === "login" ? loginState : signupState;
+  const formAction = mode === "login" ? loginFormAction : signupFormAction;
+  const isPending = mode === "login" ? isLoginPending : isSignupPending;
+
   return (
-    <form onSubmit={handleSubmit}>
+    <form action={formAction}>
       <div className="form-group">
         <label htmlFor="email">メールアドレス</label>
         <input
           id="email"
+          name="email"
           type="email"
           className="input"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
         />
@@ -78,20 +97,19 @@ export default function LoginForm() {
         <label htmlFor="password">パスワード</label>
         <input
           id="password"
+          name="password"
           type="password"
           className="input"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
           required
           minLength={6}
           autoComplete={mode === "signup" ? "new-password" : "current-password"}
         />
       </div>
 
-      {error && <p className="error-message">{error}</p>}
-      {message && (
+      {state.error && <p className="error-message">{state.error}</p>}
+      {state.message && (
         <p style={{ color: "var(--color-success)", marginBottom: "1rem" }}>
-          {message}
+          {state.message}
         </p>
       )}
 
@@ -99,13 +117,13 @@ export default function LoginForm() {
         type="submit"
         className="btn btn--primary"
         style={{ width: "100%" }}
-        disabled={isLoading}
+        disabled={isPending}
       >
-        {isLoading
+        {isPending
           ? "処理中..."
           : mode === "login"
-          ? "ログイン"
-          : "アカウント作成"}
+            ? "ログイン"
+            : "アカウント作成"}
       </button>
 
       <div style={{ marginTop: "1rem", textAlign: "center" }}>
