@@ -1,10 +1,17 @@
 import type { AIResult } from "./schemas";
 
+type SlackMessageInput = {
+  assignmentTitle: string;
+  result: AIResult;
+};
+
 /**
  * AIResultからSlack用メッセージを生成する純関数
  * Review の場合は null を返す（Slackに出さない）
  */
-export function buildSlackMessage(result: AIResult): string | null {
+export function buildSlackMessage(input: SlackMessageInput): string | null {
+  const { assignmentTitle, result } = input;
+
   // Review の場合は null を返す（Slackには絶対に出さない）
   if (result.result === "Review") {
     // submission_issue がある場合のみ、提出不備テンプレートを返す
@@ -15,11 +22,11 @@ export function buildSlackMessage(result: AIResult): string | null {
   }
 
   if (result.result === "Pass") {
-    return buildPassMessage(result);
+    return buildPassMessage(assignmentTitle, result);
   }
 
   if (result.result === "Fail") {
-    return buildFailMessage(result);
+    return buildFailMessage(assignmentTitle, result);
   }
 
   return null;
@@ -28,7 +35,7 @@ export function buildSlackMessage(result: AIResult): string | null {
 /**
  * 合格テンプレート
  */
-function buildPassMessage(result: AIResult): string {
+function buildPassMessage(assignmentTitle: string, result: AIResult): string {
   const goodPoints = formatPoints(result.good_points);
   const improvements = formatPoints(result.improvements);
 
@@ -38,7 +45,7 @@ function buildPassMessage(result: AIResult): string {
 採点の結果、「合格」となりました！おめでとうございます🎉
 
 *[課題名]*
-${result.task_name}
+${assignmentTitle}
 
 *[具体的なフィードバック]*
 
@@ -55,7 +62,7 @@ ${improvements}
 /**
  * 不合格テンプレート
  */
-function buildFailMessage(result: AIResult): string {
+function buildFailMessage(assignmentTitle: string, result: AIResult): string {
   const failReasons = formatPoints(result.fail_reasons);
   const goodPoints = formatPoints(result.good_points);
 
@@ -65,7 +72,7 @@ function buildFailMessage(result: AIResult): string {
 採点の結果、残念ながら合格基準を満たさず「不合格」となりました、再提出をお願いします。
 
 *[課題名]*
-${result.task_name}
+${assignmentTitle}
 
 *[不合格の理由・修正点]*
 ${failReasons}

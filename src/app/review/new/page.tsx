@@ -1,9 +1,14 @@
 import Navigation from "@/components/Navigation";
 import { listPolicies } from "@/actions/policies";
+import { getAssignments } from "@/actions/assignments";
 import ReviewForm from "./ReviewForm";
 
 export default async function NewReviewPage() {
-  const policiesResult = await listPolicies();
+  const [assignmentsResult, policiesResult] = await Promise.all([
+    getAssignments(),
+    listPolicies(),
+  ]);
+  const assignments = assignmentsResult;
   const policies = policiesResult.success ? policiesResult.data : [];
 
   return (
@@ -17,7 +22,7 @@ export default async function NewReviewPage() {
 
         <div className="card" style={{ maxWidth: "800px" }}>
           <div className="card__body">
-            <ReviewForm policies={policies} />
+            <ReviewForm assignments={assignments} policies={policies} />
           </div>
         </div>
       </main>

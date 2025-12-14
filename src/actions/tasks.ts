@@ -30,6 +30,12 @@ export type TaskData = {
 };
 
 export type TaskWithRelations = TaskData & {
+  assignment: {
+    id: string;
+    code: string;
+    title: string;
+    description: string;
+  };
   reviewOutput: {
     id: string;
     aiResult: unknown;
@@ -73,6 +79,9 @@ export async function getTask(
     const task = await prisma.reviewTask.findFirst({
       where: { id, userId: session.user.id },
       include: {
+        assignment: {
+          select: { id: true, code: true, title: true, description: true },
+        },
         reviewOutput: true,
         policy: {
           select: { id: true, title: true, policyText: true },
@@ -107,7 +116,7 @@ export async function createTask(
     const task = await prisma.reviewTask.create({
       data: {
         userId: session.user.id,
-        taskName: parsed.data.task_name,
+        assignmentId: parsed.data.assignment_id,
         sourceType: parsed.data.source_type,
         sourceUrl: parsed.data.source_url || null,
         inputSnapshot: parsed.data.input_snapshot,
@@ -170,30 +179,26 @@ export async function generateAiDraft(
   try {
     const task = await prisma.reviewTask.findFirst({
       where: { id: taskId, userId: session.user.id },
-      include: { policy: true },
+      include: { assignment: true, policy: true },
     });
 
     if (!task) {
       return { success: false, error: "タスクが見つかりません" };
     }
 
-    // OpenAI API呼び出し
-    const aiResult = await callOpenAI(
-      task.inputSnapshot,
-      task.policy?.policyText || ""
-    );
+    // OpenAI API呼び出し（課題情報を含める）
+    const aiResult = await callOpenAI({
+      assignmentTitle: task.assignment.title,
+      assignmentDescription: task.assignment.description,
+      inputSnapshot: task.inputSnapshot,
+      policyText: task.policy?.policyText || "",
+    });
 
     if (!aiResult.success) {
       return { success: false, error: aiResult.error };
     }
 
-    // ユーザー入力の課題名でtask_nameを上書き
-    const aiResultWithTaskName = {
-      ...(aiResult.data as object),
-      task_name: task.taskName,
-    };
-
-    const validatedResult = AIResultSchema.safeParse(aiResultWithTaskName);
+    const validatedResult = AIResultSchema.safeParse(aiResult.data);
     if (!validatedResult.success) {
       console.error("AI出力のバリデーションエラー:", validatedResult.error);
       return {

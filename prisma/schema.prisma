@@ -67,6 +67,16 @@ model User {
 // Application Models
 // ================================================
 
+model Assignment {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  code        String   // 例: "9-6"
+  title       String   // 例: 【提出課題①】LengthBasedExampleSelector
+  description String   // 課題文（全文）
+  createdAt   DateTime @default(now())
+
+  reviewTasks ReviewTask[]
+}
+
 model EvaluationPolicy {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   userId     String   @db.ObjectId
@@ -97,8 +107,8 @@ enum TaskStatus {
 model ReviewTask {
   id            String     @id @default(auto()) @map("_id") @db.ObjectId
   userId        String     @db.ObjectId
+  assignmentId  String     @db.ObjectId
   policyId      String?    @db.ObjectId
-  taskName      String
   sourceType    SourceType
   sourceUrl     String?
   inputSnapshot String
@@ -108,6 +118,7 @@ model ReviewTask {
   finalizedAt   DateTime?
 
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignment   Assignment        @relation(fields: [assignmentId], references: [id])
   policy       EvaluationPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
   reviewOutput ReviewOutput?
 

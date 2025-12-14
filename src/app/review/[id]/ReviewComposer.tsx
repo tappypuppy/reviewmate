@@ -25,7 +25,7 @@ export default function ReviewComposer({ task }: Props) {
 
   // Editable AI result
   const aiResult = (task.reviewOutput?.aiResult || {}) as Partial<AIResult>;
-  const hasAiResult = aiResult.result && aiResult.task_name;
+  const hasAiResult = !!aiResult.result;
 
   const [editableResult, setEditableResult] = useState<AIResult | null>(
     hasAiResult ? (aiResult as AIResult) : null
@@ -34,7 +34,10 @@ export default function ReviewComposer({ task }: Props) {
   // Slack用テキストを生成
   const generateSlackText = (result: AIResult | null): string => {
     if (!result) return "";
-    const message = buildSlackMessage(result);
+    const message = buildSlackMessage({
+      assignmentTitle: task.assignment.title,
+      result,
+    });
     return message || "";
   };
 
@@ -189,6 +192,9 @@ export default function ReviewComposer({ task }: Props) {
             {getStatusLabel(task.status)}
           </span>
         </div>
+        <p>
+          課題: {task.assignment.code}：{task.assignment.title}
+        </p>
         {task.policy && (
           <p>ポリシー: {task.policy.title}</p>
         )}
@@ -280,18 +286,6 @@ export default function ReviewComposer({ task }: Props) {
                     <option value="Fail">不合格</option>
                     <option value="Review">要確認</option>
                   </select>
-                </div>
-
-                <div className="form-group">
-                  <label>課題名</label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={editableResult.task_name}
-                    onChange={(e) => updateResultField("task_name", e.target.value)}
-                    disabled={task.status === "finalized"}
-                    placeholder="例: 9-6：【提出課題①】LengthBasedExampleSelector"
-                  />
                 </div>
 
                 <div className="form-group">

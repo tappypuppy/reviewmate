@@ -4,9 +4,11 @@ import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createTask } from "@/actions/tasks";
 import type { PolicyData } from "@/actions/policies";
+import type { AssignmentData } from "@/actions/assignments";
 import type { SourceType } from "@/lib/schemas";
 
 type Props = {
+  assignments: AssignmentData[];
   policies: PolicyData[];
 };
 
@@ -27,21 +29,21 @@ const sourceTypes: { value: SourceType; label: string }[] = [
   { value: "other", label: "その他" },
 ];
 
-export default function ReviewForm({ policies }: Props) {
+export default function ReviewForm({ assignments, policies }: Props) {
   const router = useRouter();
 
   const formAction = async (
     _prevState: FormState,
     formData: FormData
   ): Promise<FormState> => {
-    const taskName = formData.get("task_name") as string;
+    const assignmentId = formData.get("assignment_id") as string;
     const sourceType = formData.get("source_type") as SourceType;
     const sourceUrl = formData.get("source_url") as string;
     const inputSnapshot = formData.get("input_snapshot") as string;
     const policyId = formData.get("policy_id") as string;
 
     const result = await createTask({
-      task_name: taskName,
+      assignment_id: assignmentId,
       source_type: sourceType,
       source_url: sourceUrl || undefined,
       input_snapshot: inputSnapshot,
@@ -66,24 +68,34 @@ export default function ReviewForm({ policies }: Props) {
   return (
     <form action={action}>
       <div className="form-group">
-        <label htmlFor="task_name">課題名</label>
-        <input
-          id="task_name"
-          name="task_name"
-          type="text"
-          className="input"
-          placeholder="例：9-6：【提出課題①】LengthBasedExampleSelector"
+        <label htmlFor="assignment_id">課題選択（必須）</label>
+        <select
+          id="assignment_id"
+          name="assignment_id"
+          className="select"
           required
-        />
-        <p
-          style={{
-            fontSize: "0.875rem",
-            color: "var(--color-text-secondary)",
-            marginTop: "0.25rem",
-          }}
+          defaultValue=""
         >
-          ※会社指定の課題名をコピペしてください
-        </p>
+          <option value="" disabled>
+            課題を選択してください
+          </option>
+          {assignments.map((assignment) => (
+            <option key={assignment.id} value={assignment.id}>
+              {assignment.code}：{assignment.title}
+            </option>
+          ))}
+        </select>
+        {assignments.length === 0 && (
+          <p
+            style={{
+              fontSize: "0.875rem",
+              color: "var(--color-warning)",
+              marginTop: "0.25rem",
+            }}
+          >
+            課題が登録されていません。Prisma Studioで追加してください。
+          </p>
+        )}
       </div>
 
       <div className="form-group">

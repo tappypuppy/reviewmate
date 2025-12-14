@@ -44,8 +44,8 @@ export type UpdatePolicyInput = z.infer<typeof UpdatePolicySchema>;
 export const ReviewTaskSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
+  assignment_id: z.string(),
   policy_id: z.string().uuid().nullable(),
-  task_name: z.string(),
   source_type: SourceTypeSchema,
   source_url: z.string().nullable(),
   input_snapshot: z.string(),
@@ -56,7 +56,7 @@ export const ReviewTaskSchema = z.object({
 export type ReviewTask = z.infer<typeof ReviewTaskSchema>;
 
 export const CreateTaskSchema = z.object({
-  task_name: z.string().min(1, "課題名は必須です").max(200, "課題名は200文字以内"),
+  assignment_id: z.string().min(1, "課題を選択してください"),
   source_type: SourceTypeSchema,
   source_url: z.string().url().optional().or(z.literal("")),
   input_snapshot: z.string().min(1, "入力内容は必須です").max(50000, "入力は50000文字以内"),
@@ -70,7 +70,6 @@ export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
 
 export const AIResultSchema = z.object({
   result: z.enum(["Pass", "Fail", "Review"]),
-  task_name: z.string().min(1).max(200),
   good_points: z.array(z.string().max(200)).max(4).default([]),
   improvements: z.array(z.string().max(200)).max(4).default([]),
   fail_reasons: z.array(z.string().max(200)).max(4).default([]),

@@ -6,6 +6,17 @@
 import type { ActionResult } from "./schemas";
 
 // ================================================
+// 型定義
+// ================================================
+
+export type OpenAIInput = {
+  assignmentTitle: string;
+  assignmentDescription: string;
+  inputSnapshot: string;
+  policyText: string;
+};
+
+// ================================================
 // 定数
 // ================================================
 
@@ -31,16 +42,14 @@ const SYSTEM_PROMPT = `あなたはプログラミング学習課題の採点ア
 
 【重要】
 - 最終判断は人間が行います。迷ったら Review にしてください。
-- JSON形式のみを出力してください。説明文は不要です。
-- task_name は出力不要です（システムで別途設定されます）。`;
+- JSON形式のみを出力してください。説明文は不要です。`;
 
 // ================================================
 // OpenAI API呼び出し
 // ================================================
 
 export async function callOpenAI(
-  inputSnapshot: string,
-  policyText: string
+  input: OpenAIInput
 ): Promise<ActionResult<unknown>> {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -51,7 +60,7 @@ export async function callOpenAI(
   const { default: OpenAI } = await import("openai");
   const openai = new OpenAI({ apiKey });
 
-  const userPrompt = buildUserPrompt(inputSnapshot, policyText);
+  const userPrompt = buildUserPrompt(input);
 
   try {
     const response = await openai.chat.completions.create({
@@ -84,11 +93,24 @@ export async function callOpenAI(
 // ヘルパー関数
 // ================================================
 
-function buildUserPrompt(inputSnapshot: string, policyText: string): string {
-  const policySection = policyText ? `【評価ポリシー】\n${policyText}\n\n` : "";
+function buildUserPrompt(input: OpenAIInput): string {
+  const policySection = input.policyText
+    ? `【評価ポリシー】\n${input.policyText}\n\n`
+    : "";
 
-  return `以下の課題提出を評価してください。
+  return `以下のプログラミング課題について、提出物を評価してください。
+
+【課題名】
+${input.assignmentTitle}
+
+【課題文】
+${input.assignmentDescription}
 
 ${policySection}【提出内容】
-${inputSnapshot}`;
+${input.inputSnapshot}
+
+注意：
+- 課題文は評価対象ではありません
+- 提出物が課題文の要件を満たしているかを評価してください
+- 判断に迷う場合は必ず Review にしてください`;
 }
