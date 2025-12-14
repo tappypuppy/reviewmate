@@ -34,12 +34,14 @@ export default function ReviewForm({ policies }: Props) {
     _prevState: FormState,
     formData: FormData
   ): Promise<FormState> => {
+    const taskName = formData.get("task_name") as string;
     const sourceType = formData.get("source_type") as SourceType;
     const sourceUrl = formData.get("source_url") as string;
     const inputSnapshot = formData.get("input_snapshot") as string;
     const policyId = formData.get("policy_id") as string;
 
     const result = await createTask({
+      task_name: taskName,
       source_type: sourceType,
       source_url: sourceUrl || undefined,
       input_snapshot: inputSnapshot,
@@ -63,6 +65,27 @@ export default function ReviewForm({ policies }: Props) {
 
   return (
     <form action={action}>
+      <div className="form-group">
+        <label htmlFor="task_name">課題名</label>
+        <input
+          id="task_name"
+          name="task_name"
+          type="text"
+          className="input"
+          placeholder="例：9-6：【提出課題①】LengthBasedExampleSelector"
+          required
+        />
+        <p
+          style={{
+            fontSize: "0.875rem",
+            color: "var(--color-text-secondary)",
+            marginTop: "0.25rem",
+          }}
+        >
+          ※会社指定の課題名をコピペしてください
+        </p>
+      </div>
+
       <div className="form-group">
         <label htmlFor="source_type">提出物の種類</label>
         <select

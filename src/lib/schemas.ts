@@ -45,6 +45,7 @@ export const ReviewTaskSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   policy_id: z.string().uuid().nullable(),
+  task_name: z.string(),
   source_type: SourceTypeSchema,
   source_url: z.string().nullable(),
   input_snapshot: z.string(),
@@ -55,6 +56,7 @@ export const ReviewTaskSchema = z.object({
 export type ReviewTask = z.infer<typeof ReviewTaskSchema>;
 
 export const CreateTaskSchema = z.object({
+  task_name: z.string().min(1, "課題名は必須です").max(200, "課題名は200文字以内"),
   source_type: SourceTypeSchema,
   source_url: z.string().url().optional().or(z.literal("")),
   input_snapshot: z.string().min(1, "入力内容は必須です").max(50000, "入力は50000文字以内"),

@@ -98,12 +98,14 @@ model ReviewTask {
   id            String     @id @default(auto()) @map("_id") @db.ObjectId
   userId        String     @db.ObjectId
   policyId      String?    @db.ObjectId
+  taskName      String
   sourceType    SourceType
   sourceUrl     String?
   inputSnapshot String
   status        TaskStatus @default(draft)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  finalizedAt   DateTime?
 
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   policy       EvaluationPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)

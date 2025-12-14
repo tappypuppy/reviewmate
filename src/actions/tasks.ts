@@ -107,6 +107,7 @@ export async function createTask(
     const task = await prisma.reviewTask.create({
       data: {
         userId: session.user.id,
+        taskName: parsed.data.task_name,
         sourceType: parsed.data.source_type,
         sourceUrl: parsed.data.source_url || null,
         inputSnapshot: parsed.data.input_snapshot,
@@ -186,7 +187,13 @@ export async function generateAiDraft(
       return { success: false, error: aiResult.error };
     }
 
-    const validatedResult = AIResultSchema.safeParse(aiResult.data);
+    // ユーザー入力の課題名でtask_nameを上書き
+    const aiResultWithTaskName = {
+      ...(aiResult.data as object),
+      task_name: task.taskName,
+    };
+
+    const validatedResult = AIResultSchema.safeParse(aiResultWithTaskName);
     if (!validatedResult.success) {
       console.error("AI出力のバリデーションエラー:", validatedResult.error);
       return {
@@ -247,7 +254,7 @@ export async function finalizeTask(
       }),
       prisma.reviewTask.update({
         where: { id: parsed.data.task_id },
-        data: { status: "finalized" },
+        data: { status: "finalized", finalizedAt: new Date() },
       }),
     ]);
 
