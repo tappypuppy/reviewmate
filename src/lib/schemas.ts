@@ -68,9 +68,11 @@ export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
 
 export const AIResultSchema = z.object({
   result: z.enum(["Pass", "Fail", "Review"]),
-  good_points: z.array(z.string().max(200)).min(1).max(4),
-  improvements: z.array(z.string().max(200)).min(1).max(4),
-  confidence_note: z.string().max(300),
+  task_name: z.string().min(1).max(200),
+  good_points: z.array(z.string().max(200)).max(4).default([]),
+  improvements: z.array(z.string().max(200)).max(4).default([]),
+  fail_reasons: z.array(z.string().max(200)).max(4).default([]),
+  submission_issue: z.string().max(500).optional(),
 });
 export type AIResult = z.infer<typeof AIResultSchema>;
 

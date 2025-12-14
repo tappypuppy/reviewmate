@@ -9,34 +9,11 @@ import {
 } from "@/actions/tasks";
 import type { TaskWithRelations } from "@/actions/tasks";
 import type { AIResult } from "@/lib/schemas";
+import { buildSlackMessage, isReviewState, canCopyToSlack } from "@/lib/slack-template";
 
 type Props = {
   task: TaskWithRelations;
 };
-
-const resultLabels: Record<string, { label: string; emoji: string }> = {
-  Pass: { label: "合格", emoji: "✅" },
-  Fail: { label: "不合格", emoji: "❌" },
-  Review: { label: "要確認", emoji: "🔍" },
-};
-
-function formatSlackText(result: AIResult): string {
-  const { label, emoji } = resultLabels[result.result] || {
-    label: result.result,
-    emoji: "",
-  };
-
-  const goodPoints = result.good_points.map((p) => `・${p}`).join("\n");
-  const improvements = result.improvements.map((p) => `・${p}`).join("\n");
-
-  return `【判定】${label} ${emoji}
-
-【良かった点】
-${goodPoints}
-
-【改善点】
-${improvements}`;
-}
 
 export default function ReviewComposer({ task }: Props) {
   const router = useRouter();
@@ -48,18 +25,29 @@ export default function ReviewComposer({ task }: Props) {
 
   // Editable AI result
   const aiResult = (task.reviewOutput?.aiResult || {}) as Partial<AIResult>;
-  const hasAiResult = aiResult.result && aiResult.good_points && aiResult.improvements;
+  const hasAiResult = aiResult.result && aiResult.task_name;
 
   const [editableResult, setEditableResult] = useState<AIResult | null>(
     hasAiResult ? (aiResult as AIResult) : null
   );
+
+  // Slack用テキストを生成
+  const generateSlackText = (result: AIResult | null): string => {
+    if (!result) return "";
+    const message = buildSlackMessage(result);
+    return message || "";
+  };
+
   const [slackText, setSlackText] = useState(
-    task.reviewOutput?.slackText || (hasAiResult ? formatSlackText(aiResult as AIResult) : "")
+    task.reviewOutput?.slackText || generateSlackText(editableResult)
   );
 
   useEffect(() => {
     if (editableResult) {
-      setSlackText(formatSlackText(editableResult));
+      const newSlackText = generateSlackText(editableResult);
+      if (newSlackText) {
+        setSlackText(newSlackText);
+      }
     }
   }, [editableResult]);
 
@@ -75,7 +63,10 @@ export default function ReviewComposer({ task }: Props) {
       }
 
       setEditableResult(result.data);
-      setSlackText(formatSlackText(result.data));
+      const newSlackText = generateSlackText(result.data);
+      if (newSlackText) {
+        setSlackText(newSlackText);
+      }
       router.refresh();
     } finally {
       setIsGenerating(false);
@@ -84,6 +75,12 @@ export default function ReviewComposer({ task }: Props) {
 
   const handleFinalize = async () => {
     if (!editableResult) return;
+
+    // Review状態では確定できない（Pass/Failに変更してもらう）
+    if (isReviewState(editableResult) && !editableResult.submission_issue) {
+      setError("Review状態では確定できません。Pass または Fail に変更してください。");
+      return;
+    }
 
     setError("");
     setIsFinalizing(true);
@@ -123,6 +120,10 @@ export default function ReviewComposer({ task }: Props) {
   };
 
   const handleCopy = async () => {
+    if (editableResult && !canCopyToSlack(editableResult)) {
+      setError("Review状態ではSlackにコピーできません。");
+      return;
+    }
     await navigator.clipboard.writeText(slackText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -137,13 +138,29 @@ export default function ReviewComposer({ task }: Props) {
   };
 
   const updateArrayItem = (
-    field: "good_points" | "improvements",
+    field: "good_points" | "improvements" | "fail_reasons",
     index: number,
     value: string
   ) => {
     if (!editableResult) return;
-    const arr = [...editableResult[field]];
+    const arr = [...(editableResult[field] || [])];
     arr[index] = value;
+    setEditableResult({ ...editableResult, [field]: arr });
+  };
+
+  const addArrayItem = (field: "good_points" | "improvements" | "fail_reasons") => {
+    if (!editableResult) return;
+    const arr = [...(editableResult[field] || [])];
+    if (arr.length < 4) {
+      arr.push("");
+      setEditableResult({ ...editableResult, [field]: arr });
+    }
+  };
+
+  const removeArrayItem = (field: "good_points" | "improvements" | "fail_reasons", index: number) => {
+    if (!editableResult) return;
+    const arr = [...(editableResult[field] || [])];
+    arr.splice(index, 1);
     setEditableResult({ ...editableResult, [field]: arr });
   };
 
@@ -160,6 +177,9 @@ export default function ReviewComposer({ task }: Props) {
     }
   };
 
+  const isReview = editableResult ? isReviewState(editableResult) : false;
+  const copyDisabled = editableResult ? !canCopyToSlack(editableResult) : false;
+
   return (
     <div>
       <div className="page-header">
@@ -173,6 +193,24 @@ export default function ReviewComposer({ task }: Props) {
           <p>ポリシー: {task.policy.title}</p>
         )}
       </div>
+
+      {/* Review状態の警告 */}
+      {isReview && !editableResult?.submission_issue && (
+        <div
+          style={{
+            backgroundColor: "#fff3cd",
+            border: "1px solid #ffc107",
+            borderRadius: "var(--radius)",
+            padding: "1rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <strong>⚠️ Review状態です</strong>
+          <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.875rem" }}>
+            提出不備 or 合否判断を確認してください。Pass または Fail に変更してから確定してください。
+          </p>
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: "1.5rem", gridTemplateColumns: "1fr 1fr" }}>
         {/* Left: Input */}
@@ -245,45 +283,136 @@ export default function ReviewComposer({ task }: Props) {
                 </div>
 
                 <div className="form-group">
+                  <label>課題名</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={editableResult.task_name}
+                    onChange={(e) => updateResultField("task_name", e.target.value)}
+                    disabled={task.status === "finalized"}
+                    placeholder="例: 9-6：【提出課題①】LengthBasedExampleSelector"
+                  />
+                </div>
+
+                <div className="form-group">
                   <label>良かった点</label>
-                  {editableResult.good_points.map((point, i) => (
-                    <input
-                      key={i}
-                      type="text"
-                      className="input"
-                      value={point}
-                      onChange={(e) => updateArrayItem("good_points", i, e.target.value)}
-                      disabled={task.status === "finalized"}
-                      style={{ marginBottom: "0.5rem" }}
-                    />
+                  {(editableResult.good_points || []).map((point, i) => (
+                    <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                      <input
+                        type="text"
+                        className="input"
+                        value={point}
+                        onChange={(e) => updateArrayItem("good_points", i, e.target.value)}
+                        disabled={task.status === "finalized"}
+                        style={{ flex: 1 }}
+                      />
+                      {task.status !== "finalized" && (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--small"
+                          onClick={() => removeArrayItem("good_points", i)}
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
                   ))}
+                  {task.status !== "finalized" && (editableResult.good_points || []).length < 4 && (
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--small"
+                      onClick={() => addArrayItem("good_points")}
+                    >
+                      + 追加
+                    </button>
+                  )}
                 </div>
 
                 <div className="form-group">
                   <label>改善点</label>
-                  {editableResult.improvements.map((point, i) => (
-                    <input
-                      key={i}
-                      type="text"
-                      className="input"
-                      value={point}
-                      onChange={(e) => updateArrayItem("improvements", i, e.target.value)}
-                      disabled={task.status === "finalized"}
-                      style={{ marginBottom: "0.5rem" }}
-                    />
+                  {(editableResult.improvements || []).map((point, i) => (
+                    <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                      <input
+                        type="text"
+                        className="input"
+                        value={point}
+                        onChange={(e) => updateArrayItem("improvements", i, e.target.value)}
+                        disabled={task.status === "finalized"}
+                        style={{ flex: 1 }}
+                      />
+                      {task.status !== "finalized" && (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--small"
+                          onClick={() => removeArrayItem("improvements", i)}
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
                   ))}
+                  {task.status !== "finalized" && (editableResult.improvements || []).length < 4 && (
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--small"
+                      onClick={() => addArrayItem("improvements")}
+                    >
+                      + 追加
+                    </button>
+                  )}
                 </div>
 
-                <div className="form-group">
-                  <label>備考</label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={editableResult.confidence_note}
-                    onChange={(e) => updateResultField("confidence_note", e.target.value)}
-                    disabled={task.status === "finalized"}
-                  />
-                </div>
+                {/* 不合格理由（Failの場合のみ表示） */}
+                {editableResult.result === "Fail" && (
+                  <div className="form-group">
+                    <label>不合格理由</label>
+                    {(editableResult.fail_reasons || []).map((reason, i) => (
+                      <div key={i} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                        <input
+                          type="text"
+                          className="input"
+                          value={reason}
+                          onChange={(e) => updateArrayItem("fail_reasons", i, e.target.value)}
+                          disabled={task.status === "finalized"}
+                          style={{ flex: 1 }}
+                        />
+                        {task.status !== "finalized" && (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--small"
+                            onClick={() => removeArrayItem("fail_reasons", i)}
+                          >
+                            削除
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {task.status !== "finalized" && (editableResult.fail_reasons || []).length < 4 && (
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--small"
+                        onClick={() => addArrayItem("fail_reasons")}
+                      >
+                        + 追加
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* 提出不備（Reviewの場合のみ表示） */}
+                {editableResult.result === "Review" && (
+                  <div className="form-group">
+                    <label>提出不備（あれば）</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={editableResult.submission_issue || ""}
+                      onChange={(e) => updateResultField("submission_issue", e.target.value)}
+                      disabled={task.status === "finalized"}
+                      placeholder="例: 課題リンクが別課題になっています"
+                    />
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -295,13 +424,18 @@ export default function ReviewComposer({ task }: Props) {
         <div className="card" style={{ marginTop: "1.5rem" }}>
           <div className="card__header">
             <h3>Slack用コメント</h3>
+            {copyDisabled && (
+              <span style={{ color: "#dc3545", fontSize: "0.875rem" }}>
+                ※ Review状態ではコピーできません
+              </span>
+            )}
           </div>
           <div className="card__body">
             <textarea
               className="textarea"
               value={slackText}
               onChange={(e) => setSlackText(e.target.value)}
-              rows={10}
+              rows={12}
               disabled={task.status === "finalized"}
             />
           </div>
@@ -309,6 +443,7 @@ export default function ReviewComposer({ task }: Props) {
             <button
               className="btn btn--secondary"
               onClick={handleCopy}
+              disabled={copyDisabled}
             >
               {copied ? "コピーしました!" : "コピー"}
             </button>
@@ -316,7 +451,7 @@ export default function ReviewComposer({ task }: Props) {
               <button
                 className="btn btn--primary"
                 onClick={handleFinalize}
-                disabled={isFinalizing}
+                disabled={isFinalizing || (isReview && !editableResult?.submission_issue)}
               >
                 {isFinalizing ? "確定中..." : "確定保存"}
               </button>

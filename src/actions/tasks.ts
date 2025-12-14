@@ -175,24 +175,23 @@ export async function generateAiDraft(
       return { success: false, error: "タスクが見つかりません" };
     }
 
-    // TODO: Replace with actual AI call
-    const dummyResult: AIResult = {
-      result: "Review",
-      good_points: [
-        "コードが読みやすく整理されています",
-        "基本的な機能が実装されています",
-      ],
-      improvements: [
-        "エラーハンドリングを追加することをお勧めします",
-        "コメントを追加するとより理解しやすくなります",
-      ],
-      confidence_note:
-        "これはダミーの評価結果です。実際のAI評価は後で実装されます。",
-    };
+    // OpenAI API呼び出し
+    const aiResult = await callOpenAI(
+      task.inputSnapshot,
+      task.policy?.policyText || ""
+    );
 
-    const validatedResult = AIResultSchema.safeParse(dummyResult);
+    if (!aiResult.success) {
+      return { success: false, error: aiResult.error };
+    }
+
+    const validatedResult = AIResultSchema.safeParse(aiResult.data);
     if (!validatedResult.success) {
-      return { success: false, error: "AI出力の検証に失敗しました" };
+      console.error("AI出力のバリデーションエラー:", validatedResult.error);
+      return {
+        success: false,
+        error: "AI出力の形式が不正です。手動で評価してください。",
+      };
     }
 
     await prisma.$transaction([
@@ -210,7 +209,79 @@ export async function generateAiDraft(
     revalidatePath("/dashboard");
     return { success: true, data: validatedResult.data };
   } catch (error) {
+    console.error("generateAiDraft error:", error);
     return { success: false, error: "AI生成に失敗しました" };
+  }
+}
+
+// OpenAI API呼び出し用のヘルパー関数
+async function callOpenAI(
+  inputSnapshot: string,
+  policyText: string
+): Promise<ActionResult<unknown>> {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    return { success: false, error: "OpenAI APIキーが設定されていません" };
+  }
+
+  const { default: OpenAI } = await import("openai");
+  const openai = new OpenAI({ apiKey });
+
+  const systemPrompt = `あなたはプログラミング学習課題の採点アシスタントです。
+受講生が提出した課題を評価し、以下のJSON形式で結果を返してください。
+
+【出力JSON形式（厳守）】
+{
+  "result": "Pass" | "Fail" | "Review",
+  "task_name": "課題名（提出内容から推測）",
+  "good_points": ["良かった点（最大4つ）"],
+  "improvements": ["改善点（最大4つ）"],
+  "fail_reasons": ["不合格理由（Failの場合のみ、最大4つ）"],
+  "submission_issue": "提出不備があれば記載（任意）"
+}
+
+【判定ルール】
+- 要件を満たしていれば "Pass"
+- 必須要件が未実装なら "Fail"
+- 判断に迷う場合は必ず "Review"
+- submission_issue がある場合は必ず "Review"
+- Pass の場合: fail_reasons = []
+- Fail の場合: improvements = []
+
+【重要】
+- 最終判断は人間が行います。迷ったら Review にしてください。
+- JSON形式のみを出力してください。説明文は不要です。`;
+
+  const userPrompt = `以下の課題提出を評価してください。
+
+${policyText ? `【評価ポリシー】\n${policyText}\n\n` : ""}【提出内容】
+${inputSnapshot}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return { success: false, error: "AIからの応答がありませんでした" };
+    }
+
+    const parsed = JSON.parse(content);
+    return { success: true, data: parsed };
+  } catch (error) {
+    console.error("OpenAI API error:", error);
+    if (error instanceof Error) {
+      return { success: false, error: `AI呼び出しエラー: ${error.message}` };
+    }
+    return { success: false, error: "AI呼び出しに失敗しました" };
   }
 }
 
